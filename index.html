@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>大顶子荐股模拟盘</title>
+<style>
+:root{--bg:#0f1115;--card:#181b22;--line:#262a33;--txt:#e8eaed;--mut:#8b919c;--up:#e5484d;--dn:#30a46c;--acc:#f5b041}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--txt);font:15px/1.5 -apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;padding:14px 12px 40px;max-width:820px;margin:auto}
+h1{font-size:22px;margin:4px 0 2px}h2{font-size:17px;margin:22px 0 8px}
+.mut{color:var(--mut);font-size:12.5px}.up{color:var(--up)}.dn{color:var(--dn)}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:10px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px}
+.big{font-size:24px;font-weight:700}.row{display:flex;justify-content:space-between;gap:8px;font-size:13.5px}
+.tabs{display:flex;gap:6px;flex-wrap:wrap;margin:6px 0 10px}.tabs button{background:var(--card);color:var(--txt);border:1px solid var(--line);border-radius:999px;padding:5px 12px;font-size:13px}
+.tabs button.on{background:var(--acc);color:#111;border-color:var(--acc)}
+.t{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin-bottom:8px}
+.th{display:flex;justify-content:space-between;align-items:center;gap:6px}.tk{font-weight:700;font-size:16px}
+.tag{font-size:11.5px;padding:1px 7px;border-radius:6px;background:#2a2f3a;color:#c9ced6;margin-left:4px;white-space:nowrap}
+.tag.open{background:#3b2f10;color:var(--acc)}.tag.closed{background:#1d2a3a;color:#8ec5ff}.tag.real{background:#3a1d2a;color:#ff9ec5}
+.kv{display:grid;grid-template-columns:repeat(4,1fr);gap:4px 8px;font-size:12.5px;margin-top:6px}.kv b{display:block;color:var(--mut);font-weight:400;font-size:11px}
+.ex{font-size:12.5px;margin-top:6px;border-top:1px dashed var(--line);padding-top:6px}
+.note{font-size:12px;color:var(--mut);margin-top:5px}
+svg{width:100%;height:auto;display:block}
+.live{font-size:12.5px;padding:8px 10px;border-radius:10px;background:#1b2230;border:1px solid #2b3550;margin:10px 0}
+button.r{background:var(--acc);border:0;border-radius:8px;padding:4px 10px;font-size:12.5px;color:#111;margin-left:6px}
+details{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 12px;font-size:13px}
+details li{margin:3px 0}
+</style>
+</head>
+<body>
+<h1>大顶子荐股模拟盘</h1>
+<div class="mut">大顶子推荐的美股如果完全照做，收益是多少（模拟，不是真实账户）</div>
+<div class="live" id="live"></div>
+
+<h2>账户总览</h2>
+<div class="cards" id="accts"></div>
+
+<h2>资金曲线（每日收盘）</h2>
+<div class="card"><div id="chart"></div><div class="mut" style="margin-top:4px"><span style="color:#f5b041">■</span> 游戏账户　<span style="color:#8ec5ff">■</span> 普通账户　<span style="color:#c9ced6">■</span> 合计</div></div>
+
+<h2>每笔推荐</h2>
+<div class="tabs" id="tabs"></div>
+<div id="trades"></div>
+
+<h2>模拟规则</h2>
+<details><summary>点开看怎么算的</summary><ul>
+<li>游戏账户起始 1000 美元，普通账户起始 2000 美元，分开记账，现金不够的单子跳过。</li>
+<li>APLD、SPYM 用大哥实际买入价；APLD 用实际卖出价 15.37。SPYM 卖出价大哥没报，按 11-17 跌破止损 86.25 时卖出模拟。</li>
+<li>条件单：在有效时间内涨到触发价才买，成交价＝触发价（开盘跳空则按开盘价），但不超过限价；整根K线都高于限价就算没成交。</li>
+<li>买入后：跌到止损价全部卖出；到第一目标卖一半（单数股多卖一股），到第二目标卖剩下的；剩下的仍按原止损。</li>
+<li>同一根 5 分钟K线既碰止损又碰目标时，保守按止损算。</li>
+<li>“二选一”“只做先触发的一只”：先成交的那只算数，其余取消。“备选”只在主选没全部成交时才做。“须先卖SPYM”要等 SPYM 卖出后才买。</li>
+<li>“10:00后”“QQQ≥X才买”“QQQ&lt;X作废”“跌破X作废”这些条件都照着判断（QQQ 用同一根K线收盘价）。</li>
+<li>行情：雅虎财经 5 分钟K线，常规交易时段。还在持仓的按最新价计浮动盈亏。不含手续费。</li>
+<li>TSLA 42 股长期持仓、11-10 至 11-15 没有完整价位的观察意见，不计入。</li>
+</ul></details>
+<p class="mut" id="foot"></p>
+
+<script>const D={"snapshot": "2026-11-24 11:29 美东", "generated": "2026-11-24 11:30 美东", "accounts": {"game": {"name": "游戏账户", "start": 1000.0, "cash": 795.6, "held": 0, "value": 795.6, "pnl": -204.4, "pct": -20.44, "n_filled": 4, "realized": -204.4, "unreal": 0}, "regular": {"name": "普通账户", "start": 2000.0, "cash": 947.3, "held": 1005.34, "value": 1952.64, "pnl": -47.36, "pct": -2.37, "n_filled": 3, "realized": -65.0, "unreal": 17.64}, "total": {"name": "合计", "start": 3000.0, "value": 2748.24, "pnl": -251.76, "pct": -8.39, "cash": 1742.9}}, "trades": [{"date": "2026-11-11", "account": "game", "ticker": "APLD", "kind": "实际", "trigger": null, "limit": 18.25, "shares": 50, "stop": 16.0, "t1": 19.0, "t2": 22.0, "expiry": "", "state": "closed", "state_cn": "已平仓", "entry": 18.25, "fill_time": "11-11 09:30", "exits": [{"time": "11-13 15:55", "px": 15.37, "n": 50, "why": "实际卖出", "real": true}], "rem": 0, "cur": 11.885, "realized": -144.0, "unreal": 0, "pnl": -144.0, "note": "大哥实际成交", "sim": "实际成交价"}, {"date": "2026-11-11", "account": "regular", "ticker": "SPYM", "kind": "实际", "trigger": null, "limit": 88.98, "shares": 20, "stop": 86.25, "t1": 90.53, "t2": 92.0, "expiry": "", "state": "closed", "state_cn": "已平仓", "entry": 88.98, "fill_time": "11-11 09:35", "exits": [{"time": "11-17 10:40", "px": 86.25, "n": 20, "why": "止损", "real": false}], "rem": 0, "cur": 84.112, "realized": -54.6, "unreal": 0, "pnl": -54.6, "note": "大哥实际成交；2026-11-17 约10:40ET 跌破86.25；大哥未报卖出价", "sim": "实际成交价；卖出价大哥未报，按模拟止损计算"}, {"date": "2026-11-16", "account": "game", "ticker": "TTWO", "kind": "条件单", "trigger": 237.6, "limit": null, "shares": 3, "stop": 226.0, "t1": 247.0, "t2": 255.0, "expiry": "2026-11-19 close", "state": "expired", "state_cn": "未触发·已过期", "entry": null, "fill_time": null, "exits": [], "rem": 0, "cur": 221.79, "realized": 0, "unreal": 0, "pnl": null, "note": "与NVO二选一", "sim": "没给限价，按触发价成交（跳空则按开盘价）"}, {"date": "2026-11-16", "account": "game", "ticker": "NVO", "kind": "条件单", "trigger": 43.3, "limit": null, "shares": 18, "stop": 40.6, "t1": 45.0, "t2": 47.0, "expiry": "", "state": "expired", "state_cn": "未触发·已过期", "entry": null, "fill_time": null, "exits": [], "rem": 0, "cur": 40.225, "realized": 0, "unreal": 0, "pnl": null, "note": "与TTWO二选一；11-17作废", "sim": "11-17作废，按只在 11-16 当天有效处理；没给限价，按触发价成交（跳空则按开盘价）"}, {"date": "2026-11-16", "account": "regular", "ticker": "XPEV", "kind": "条件单", "trigger": 10.4, "limit": 10.5, "shares": 20, "stop": 9.4, "t1": 11.2, "t2": 11.8, "expiry": "2026-11-18 close", "state": "expired", "state_cn": "未触发·已过期", "entry": null, "fill_time": null, "exits": [], "rem": 0, "cur": 8.93, "realized": 0, "unreal": 0, "pnl": null, "note": "", "sim": ""}, {"date": "2026-11-18", "account": "game", "ticker": "NBIS", "kind": "条件单", "trigger": 115.6, "limit": 116.5, "shares": 4, "stop": 108.8, "t1": 124.0, "t2": 132.0, "expiry": "2026-11-18 close", "state": "cancelled", "state_cn": "已取消", "entry": null, "fill_time": null, "exits": [], "rem": 0, "cur": 85.57, "realized": 0, "unreal": 0, "pnl": null, "note": "跌破104.75作废", "sim": "11-18 09:35 跌破 104.75，作废"}, {"date": "2026-11-18", "account": "game", "ticker": "CRWV", "kind": "条件单", "trigger": 53.7, "limit": 54.2, "shares": 7, "stop": 50.5, "t1": 58.0, "t2": 62.0, "expiry": "2026-11-18 close", "state": "expired", "state_cn": "未触发·已过期", "entry": null, "fill_time": null, "exits": [], "rem": 0, "cur": 41.7, "realized": 0, "unreal": 0, "pnl": null, "note": "", "sim": ""}, {"date": "2026-11-18", "account": "game", "ticker": "IREN", "kind": "条件单", "trigger": 17.2, "limit": 17.4, "shares": 25, "stop": 16.0, "t1": 18.5, "t2": 19.8, "expiry": "2026-11-18 close", "state": "expired", "state_cn": "未触发·已过期", "entry": null, "fill_time": null, "exits": [], "rem": 0, "cur": 12.45, "realized": 0, "unreal": 0, "pnl": null, "note": "NBIS或CRWV没成交时的备选", "sim": ""}, {"date": "2026-11-18", "account": "regular", "ticker": "AVGO", "kind": "条件单", "trigger": 352.1, "limit": 353.5, "shares": 3, "stop": 340.0, "t1": 362.0, "t2": 369.0, "expiry": "2026-11-18 close", "state": "cancelled", "state_cn": "已取消", "entry": null, "fill_time": null, "exits": [], "rem": 0, "cur": 299.96, "realized": 0, "unreal": 0, "pnl": null, "note": "约10:20ET触发；须先卖SPYM", "sim": "同组 TJX 先成交，本单取消"}, {"date": "2026-11-18", "account": "regular", "ticker": "TJX", "kind": "条件单", "trigger": 141.1, "limit": 141.8, "shares": 7, "stop": 136.5, "t1": 145.0, "t2": 148.5, "expiry": "2026-11-18 close", "state": "open", "state_cn": "持仓中", "entry": 141.1, "fill_time": "11-18 09:45", "exits": [], "rem": 7, "cur": 143.62, "realized": 0, "unreal": 17.64, "pnl": 17.64, "note": "与AVGO二选一", "sim": ""}, {"date": "2026-11-19", "account": "game", "ticker": "NBIS", "kind": "条件单", "trigger": 115.0, "limit": 115.8, "shares": 4, "stop": 109.8, "t1": 121.0, "t2": 126.0, "expiry": "2026-11-19 close", "state": "closed", "state_cn": "已平仓", "entry": 115.0, "fill_time": "11-19 09:30", "exits": [{"time": "11-19 09:55", "px": 109.8, "n": 4, "why": "止损", "real": false}], "rem": 0, "cur": 85.57, "realized": -20.8, "unreal": 0, "pnl": -20.8, "note": "跌破108.60作废", "sim": ""}, {"date": "2026-11-19", "account": "game", "ticker": "CRWV", "kind": "条件单", "trigger": 51.1, "limit": 51.5, "shares": 7, "stop": 48.3, "t1": 54.5, "t2": 57.0, "expiry": "2026-11-19 close", "state": "closed", "state_cn": "已平仓", "entry": 51.1, "fill_time": "11-19 09:30", "exits": [{"time": "11-19 10:35", "px": 48.3, "n": 7, "why": "止损", "real": false}], "rem": 0, "cur": 41.7, "realized": -19.6, "unreal": 0, "pnl": -19.6, "note": "9:50冲到52.86后回落", "sim": ""}, {"date": "2026-11-19", "account": "game", "ticker": "IREN", "kind": "条件单", "trigger": 16.4, "limit": 16.55, "shares": 25, "stop": 15.5, "t1": 17.4, "t2": 18.2, "expiry": "2026-11-19 close", "state": "cancelled", "state_cn": "已取消", "entry": null, "fill_time": null, "exits": [], "rem": 0, "cur": 12.45, "realized": 0, "unreal": 0, "pnl": null, "note": "备选", "sim": "主选都已成交，备选不做"}, {"date": "2026-11-19", "account": "regular", "ticker": "SMCI", "kind": "条件单", "trigger": 25.6, "limit": 25.75, "shares": 8, "stop": 24.3, "t1": 26.9, "t2": 28.0, "expiry": "2026-11-19 close", "state": "closed", "state_cn": "已平仓", "entry": 25.6, "fill_time": "11-19 09:45", "exits": [{"time": "11-19 11:50", "px": 24.3, "n": 8, "why": "止损", "real": false}], "rem": 0, "cur": 22.5, "realized": -10.4, "unreal": 0, "pnl": -10.4, "note": "", "sim": ""}, {"date": "2026-11-19", "account": "regular", "ticker": "GOOGL", "kind": "条件单", "trigger": 295.2, "limit": 296.2, "shares": 4, "stop": 286.5, "t1": 304.0, "t2": 310.0, "expiry": "2026-11-19 close", "state": "skipped", "state_cn": "资金不足跳过", "entry": null, "fill_time": null, "exits": [], "rem": 0, "cur": 276.965, "realized": 0, "unreal": 0, "pnl": null, "note": "须先卖SPYM；与AMZN二选一", "sim": "11-19 09:30 触发，但需 1180.80，账户现金只剩 957.70，跳过"}, {"date": "2026-11-19", "account": "regular", "ticker": "AMZN", "kind": "条件单", "trigger": 274.8, "limit": 275.8, "shares": 4, "stop": 267.5, "t1": 282.0, "t2": 288.0, "expiry": "2026-11-19 close", "state": "expired", "state_cn": "未触发·已过期", "entry": null, "fill_time": null, "exits": [], "rem": 0, "cur": 251.681, "realized": 0, "unreal": 0, "pnl": null, "note": "须先卖SPYM", "sim": ""}, {"date": "2026-11-20", "account": "game", "ticker": "NVDA", "kind": "条件单", "trigger": 146.1, "limit": 146.8, "shares": 5, "stop": 141.8, "t1": 150.5, "t2": 154.0, "expiry": "2026-11-20 11:30ET", "state": "expired", "state_cn": "未触发·已过期", "entry": null, "fill_time": null, "exits": [], "rem": 0, "cur": 151.475, "realized": 0, "unreal": 0, "pnl": null, "note": "10:00后且QQQ>=637才买；与CRWV二选一", "sim": ""}, {"date": "2026-11-20", "account": "game", "ticker": "CRWV", "kind": "条件单", "trigger": 45.0, "limit": 45.4, "shares": 18, "stop": 42.4, "t1": 48.0, "t2": 51.0, "expiry": "2026-11-20 11:30ET", "state": "expired", "state_cn": "未触发·已过期", "entry": null, "fill_time": null, "exits": [], "rem": 0, "cur": 41.7, "realized": 0, "unreal": 0, "pnl": null, "note": "同上", "sim": ""}, {"date": "2026-11-20", "account": "regular", "ticker": "SMCI", "kind": "条件单", "trigger": 23.9, "limit": 24.1, "shares": 9, "stop": 22.8, "t1": 25.0, "t2": 25.8, "expiry": "2026-11-20 11:30ET", "state": "expired", "state_cn": "未触发·已过期", "entry": null, "fill_time": null, "exits": [], "rem": 0, "cur": 22.5, "realized": 0, "unreal": 0, "pnl": null, "note": "与XPEV二选一", "sim": ""}, {"date": "2026-11-20", "account": "regular", "ticker": "XPEV", "kind": "条件单", "trigger": 9.45, "limit": 9.52, "shares": 23, "stop": 9.0, "t1": 9.9, "t2": 10.2, "expiry": "2026-11-20 11:30ET", "state": "expired", "state_cn": "未触发·已过期", "entry": null, "fill_time": null, "exits": [], "rem": 0, "cur": 8.93, "realized": 0, "unreal": 0, "pnl": null, "note": "", "sim": ""}, {"date": "2026-11-20", "account": "regular", "ticker": "AAPL", "kind": "条件单", "trigger": 352.1, "limit": 353.0, "shares": 5, "stop": 345.9, "t1": 357.1, "t2": 362.0, "expiry": "2026-11-20 11:30ET", "state": "skipped", "state_cn": "资金不足跳过", "entry": null, "fill_time": null, "exits": [], "rem": 0, "cur": 351.4, "realized": 0, "unreal": 0, "pnl": null, "note": "须先卖SPYM；与GOOGL二选一", "sim": "11-20 09:30 触发，但需 1763.15，账户现金只剩 947.30，跳过"}, {"date": "2026-11-20", "account": "regular", "ticker": "GOOGL", "kind": "条件单", "trigger": 276.0, "limit": 276.8, "shares": 6, "stop": 269.0, "t1": 283.0, "t2": 290.0, "expiry": "2026-11-20 11:30ET", "state": "expired", "state_cn": "未触发·已过期", "entry": null, "fill_time": null, "exits": [], "rem": 0, "cur": 276.965, "realized": 0, "unreal": 0, "pnl": null, "note": "QQQ<637 未执行", "sim": "11-20 09:30 触发但QQQ 635.01 < 637.0，不买；11-20 09:35 触发但QQQ 635.71 < 637.0，不买；11-20 09:40 触发但整根K线都高于限价 276.8，没成交，等回落；11-20 10:55 触发但QQQ 628.80 < 637.0，不买；11-20 11:00 触发但QQQ 626.19 < 637.0，不买；11-20 11:05 触发但QQQ 627.59 < 637.0，不买；11-20 11:10 触发但QQQ 629.50 < 637.0，不买"}, {"date": "2026-11-23", "account": "game", "ticker": "NVDA", "kind": "条件单", "trigger": 165.6, "limit": 167.0, "shares": 4, "stop": 155.0, "t1": 173.0, "t2": 178.0, "expiry": "2026-11-23 14:00ET", "state": "cancelled", "state_cn": "已取消", "entry": null, "fill_time": null, "exits": [], "rem": 0, "cur": 151.475, "realized": 0, "unreal": 0, "pnl": null, "note": "10:00后触发；QQQ<635作废；只做先触发的一只", "sim": "同组 AMD 先成交，本单取消"}, {"date": "2026-11-23", "account": "game", "ticker": "AMD", "kind": "条件单", "trigger": 461.0, "limit": 465.0, "shares": 1, "stop": 445.0, "t1": 490.0, "t2": 505.0, "expiry": "2026-11-23 14:00ET", "state": "closed", "state_cn": "已平仓", "entry": 465.0, "fill_time": "11-23 09:30", "exits": [{"time": "11-23 09:45", "px": 445.0, "n": 1, "why": "止损", "real": false}], "rem": 0, "cur": 397.8, "realized": -20.0, "unreal": 0, "pnl": -20.0, "note": "", "sim": "11-23 09:30 开盘 476.33 高于限价，盘中回落到限价 465.0 成交"}, {"date": "2026-11-23", "account": "game", "ticker": "SMCI", "kind": "条件单", "trigger": 26.6, "limit": 26.8, "shares": 25, "stop": 24.8, "t1": 28.6, "t2": 30.0, "expiry": "2026-11-23 14:00ET", "state": "cancelled", "state_cn": "已取消", "entry": null, "fill_time": null, "exits": [], "rem": 0, "cur": 22.5, "realized": 0, "unreal": 0, "pnl": null, "note": "", "sim": "同组 AMD 先成交，本单取消"}, {"date": "2026-11-23", "account": "regular", "ticker": "GOOGL", "kind": "条件单", "trigger": 284.0, "limit": 285.5, "shares": 5, "stop": 276.0, "t1": 293.0, "t2": 298.0, "expiry": "2026-11-23 14:00ET", "state": "skipped", "state_cn": "资金不足跳过", "entry": null, "fill_time": null, "exits": [], "rem": 0, "cur": 276.965, "realized": 0, "unreal": 0, "pnl": null, "note": "10:30后；须先卖SPYM", "sim": "11-23 12:05 触发，但需 1420.00，账户现金只剩 947.30，跳过"}, {"date": "2026-11-23", "account": "regular", "ticker": "META", "kind": "条件单", "trigger": 600.0, "limit": 602.0, "shares": 2, "stop": 585.0, "t1": 618.0, "t2": 626.0, "expiry": "2026-11-23 14:00ET", "state": "expired", "state_cn": "未触发·已过期", "entry": null, "fill_time": null, "exits": [], "rem": 0, "cur": 588.72, "realized": 0, "unreal": 0, "pnl": null, "note": "同上", "sim": ""}, {"date": "2026-11-24", "account": "game", "ticker": "NVDA", "kind": "条件单", "trigger": 164.4, "limit": 165.0, "shares": 5, "stop": 155.0, "t1": 171.5, "t2": 178.0, "expiry": "2026-11-24 14:00ET", "state": "pending", "state_cn": "等待触发", "entry": null, "fill_time": null, "exits": [], "rem": 0, "cur": 151.475, "realized": 0, "unreal": 0, "pnl": null, "note": "QQQ>=645才买，<630全撤；只做先触发的一只", "sim": ""}, {"date": "2026-11-24", "account": "game", "ticker": "AMD", "kind": "条件单", "trigger": 455.0, "limit": 458.0, "shares": 1, "stop": 432.0, "t1": 477.0, "t2": 490.0, "expiry": "2026-11-24 14:00ET", "state": "pending", "state_cn": "等待触发", "entry": null, "fill_time": null, "exits": [], "rem": 0, "cur": 397.8, "realized": 0, "unreal": 0, "pnl": null, "note": "同上", "sim": ""}, {"date": "2026-11-24", "account": "game", "ticker": "SMCI", "kind": "条件单", "trigger": 24.6, "limit": 24.75, "shares": 30, "stop": 23.1, "t1": 26.4, "t2": 27.5, "expiry": "2026-11-24 14:00ET", "state": "pending", "state_cn": "等待触发", "entry": null, "fill_time": null, "exits": [], "rem": 0, "cur": 22.5, "realized": 0, "unreal": 0, "pnl": null, "note": "同上", "sim": ""}, {"date": "2026-11-24", "account": "regular", "ticker": "GOOGL", "kind": "条件单", "trigger": 286.5, "limit": 288.0, "shares": 5, "stop": 278.0, "t1": 295.0, "t2": 300.0, "expiry": "2026-11-24 14:00ET", "state": "pending", "state_cn": "等待触发", "entry": null, "fill_time": null, "exits": [], "rem": 0, "cur": 276.965, "realized": 0, "unreal": 0, "pnl": null, "note": "10:30后；须先卖SPYM", "sim": ""}, {"date": "2026-11-24", "account": "regular", "ticker": "META", "kind": "条件单", "trigger": 604.0, "limit": 606.0, "shares": 2, "stop": 583.0, "t1": 618.0, "t2": 630.0, "expiry": "2026-11-24 14:00ET", "state": "pending", "state_cn": "等待触发", "entry": null, "fill_time": null, "exits": [], "rem": 0, "cur": 588.72, "realized": 0, "unreal": 0, "pnl": null, "note": "同上", "sim": ""}], "equity": [{"d": "起始", "game": 1000.0, "regular": 2000.0}, {"d": "11-11", "game": 982.75, "regular": 2009.2}, {"d": "11-12", "game": 935.0, "regular": 2002.9}, {"d": "11-13", "game": 856.0, "regular": 1996.0}, {"d": "11-16", "game": 856.0, "regular": 1962.7}, {"d": "11-17", "game": 856.0, "regular": 1945.4}, {"d": "11-18", "game": 856.0, "regular": 1939.66}, {"d": "11-19", "game": 815.6, "regular": 1923.52}, {"d": "11-20", "game": 815.6, "regular": 1924.99}, {"d": "11-23", "game": 795.6, "regular": 1922.26}, {"d": "11-24", "game": 795.6, "regular": 1952.64}], "open_tickers": ["TJX"]};</script>
+<script>
+const $=s=>document.querySelector(s);
+const money=v=>(v<0?'-':'')+'$'+Math.abs(v).toFixed(2);
+const sgn=v=>(v>0?'+':'')+v.toFixed(2);
+const cls=v=>v>0?'up':(v<0?'dn':'');
+const n=v=>v==null?'—':(+v).toString();
+let live={}, liveTime=null, filter='all';
+
+function curPrice(t){return live[t.ticker]!=null?live[t.ticker]:t.cur}
+function calc(){
+  const res={};
+  for(const a of ['game','regular']){
+    const A=D.accounts[a];let held=0,unreal=0;
+    for(const t of D.trades) if(t.account===a&&t.state==='open'){const p=curPrice(t);held+=p*t.rem;unreal+=(p-t.entry)*t.rem}
+    const value=A.cash+held;res[a]={...A,held,value,unreal,pnl:value-A.start,pct:(value/A.start-1)*100};
+  }
+  const v=res.game.value+res.regular.value,s=res.game.start+res.regular.start;
+  res.total={name:'合计',start:s,value:v,pnl:v-s,pct:(v/s-1)*100,cash:res.game.cash+res.regular.cash};
+  return res;
+}
+function renderAccts(){
+  const r=calc();
+  $('#accts').innerHTML=['total','game','regular'].map(k=>{const a=r[k];return `<div class="card">
+  <div class="row"><b>${a.name}</b><span class="mut">起始 ${money(a.start)}</span></div>
+  <div class="big">${money(a.value)}</div>
+  <div class="row"><span class="${cls(a.pnl)}">${sgn(a.pnl)} 美元</span><span class="${cls(a.pnl)}">${sgn(a.pct)}%</span></div>
+  ${k!=='total'?`<div class="row mut"><span>现金 ${money(a.cash)}</span><span>持仓市值 ${money(a.held)}</span></div>
+  <div class="row mut"><span>已实现 ${sgn(a.realized)}</span><span>浮动 ${sgn(a.unreal)}</span></div>
+  <div class="row mut"><span>成交过 ${a.n_filled} 笔</span></div>`:`<div class="row mut"><span>现金合计 ${money(a.cash)}</span></div>`}
+  </div>`}).join('');
+}
+function renderChart(){
+  const E=D.equity.map(e=>({...e,total:e.game+e.regular}));
+  const W=640,H=220,P=36;const vals=E.flatMap(e=>[e.game,e.regular,e.total]);
+  let lo=Math.min(...vals),hi=Math.max(...vals);const pad=(hi-lo)*.1||50;lo-=pad;hi+=pad;
+  const x=i=>P+(W-P-8)*(E.length<2?0:i/(E.length-1)),y=v=>8+(H-30)*(1-(v-lo)/(hi-lo));
+  const line=(k,c)=>`<polyline fill="none" stroke="${c}" stroke-width="2.2" points="${E.map((e,i)=>x(i)+','+y(e[k])).join(' ')}"/>`+E.map((e,i)=>`<circle cx="${x(i)}" cy="${y(e[k])}" r="2.6" fill="${c}"/>`).join('');
+  let g='';for(let j=0;j<=4;j++){const v=lo+(hi-lo)*j/4;g+=`<line x1="${P}" x2="${W-8}" y1="${y(v)}" y2="${y(v)}" stroke="#262a33"/><text x="2" y="${y(v)+4}" fill="#8b919c" font-size="10">${Math.round(v)}</text>`}
+  const lab=E.map((e,i)=>(i%Math.ceil(E.length/7)===0||i===E.length-1)?`<text x="${x(i)}" y="${H-6}" fill="#8b919c" font-size="10" text-anchor="middle">${e.d}</text>`:'').join('');
+  $('#chart').innerHTML=`<svg viewBox="0 0 ${W} ${H}">${g}${line('total','#c9ced6')}${line('regular','#8ec5ff')}${line('game','#f5b041')}${lab}</svg>`;
+}
+const TABS=[['all','全部'],['filled','成交过的'],['open','持仓/挂单中'],['nofill','没成交']];
+function renderTabs(){$('#tabs').innerHTML=TABS.map(([k,l])=>`<button class="${k===filter?'on':''}" onclick="filter='${k}';renderTabs();renderTrades()">${l}</button>`).join('')}
+function renderTrades(){
+  let T=[...D.trades].reverse();
+  if(filter==='filled')T=T.filter(t=>t.entry!=null);
+  if(filter==='open')T=T.filter(t=>t.state==='open'||t.state==='pending'||t.state==='armed');
+  if(filter==='nofill')T=T.filter(t=>t.entry==null);
+  $('#trades').innerHTML=T.map(t=>{
+    const p=curPrice(t);let pnl=t.pnl;if(t.state==='open')pnl=t.realized+(p-t.entry)*t.rem;
+    const live_=(t.state==='pending'&&p!=null)?`<div class="note">现价 ${p.toFixed(2)}，离触发价 ${t.trigger} 还差 ${((t.trigger/p-1)*100).toFixed(2)}%</div>`:'';
+    const warn=(t.state==='open'&&t.stop!=null&&p<=t.stop)?`<div class="note up">⚠ 现价已低于止损 ${t.stop}，按规则应已止损（重新跑脚本会更新）</div>`:'';
+    return `<div class="t">
+    <div class="th"><div><span class="tk">${t.ticker}</span><span class="tag">${t.account==='game'?'游戏':'普通'}</span>${t.kind==='实际'?'<span class="tag real">实际成交</span>':''}<span class="tag ${t.state}">${t.state_cn}</span></div>
+    <div class="${pnl!=null?cls(pnl):'mut'}" style="font-weight:700">${pnl!=null?sgn(pnl):'—'}</div></div>
+    <div class="mut">${t.date} 推荐${t.expiry?' · 有效至 '+t.expiry:''}</div>
+    <div class="kv"><div><b>触发</b>${n(t.trigger)}</div><div><b>${t.kind==='实际'?'成交价':'限价'}</b>${n(t.limit)}</div><div><b>股数</b>${t.shares}</div><div><b>止损</b>${n(t.stop)}</div>
+    <div><b>目标1</b>${n(t.t1)}</div><div><b>目标2</b>${n(t.t2)}</div><div><b>买入</b>${t.entry!=null?t.entry.toFixed(2):'—'}</div><div><b>${t.state==='open'?'现价':'剩余'}</b>${t.state==='open'?(p!=null?p.toFixed(2):'—'):(t.entry!=null?t.rem:'—')}</div></div>
+    ${t.entry!=null?`<div class="ex">买入 ${t.fill_time} @ ${t.entry.toFixed(2)} × ${t.shares}${t.exits.map(e=>`<br>卖出 ${e.time} @ ${e.px.toFixed(2)} × ${e.n}（${e.why}${e.real?'':'，模拟'}）`).join('')}${t.state==='open'?`<br>持有 ${t.rem} 股，按现价计浮动盈亏`:''}</div>`:''}
+    ${live_}${warn}
+    ${t.note?`<div class="note">大顶子备注：${t.note}</div>`:''}
+    ${t.sim?`<div class="note">模拟说明：${t.sim}</div>`:''}
+    </div>`}).join('');
+}
+function renderLive(){
+  $('#live').innerHTML=`行情快照：${D.snapshot}（美东＝多伦多时间）`+(liveTime?`<br>现价已实时刷新：${liveTime}（持仓浮盈和挂单距离用现价；成交/止损判断以快照为准）`:'')+`<button class="r" onclick="refresh()">刷新现价</button>`;
+}
+async function refresh(){
+  const syms=[...new Set(D.trades.filter(t=>t.state==='open'||t.state==='pending').map(t=>t.ticker))];
+  if(!syms.length)return;
+  try{
+    const u='https://quote.cnbc.com/quote-html-webservice/restQuote/symbolType/symbol?symbols='+syms.join('%7C')+'&requestMethod=itv&noform=1&partnerId=2&fund=1&exthrs=1&output=json';
+    const j=await (await fetch(u)).json();
+    let q=j.FormattedQuoteResult.FormattedQuote;if(!Array.isArray(q))q=[q];
+    for(const x of q){const v=parseFloat(String(x.last).replace(/,/g,''));if(!isNaN(v))live[x.symbol]=v}
+    liveTime=new Date().toLocaleString('zh-CN',{timeZone:'America/New_York',hour12:false})+' 美东';
+  }catch(e){liveTime=null;$('#live').innerHTML+=' <span class="up">（实时刷新失败，显示快照）</span>';return}
+  renderAll();
+}
+function renderAll(){renderLive();renderAccts();renderChart();renderTabs();renderTrades()}
+$('#foot').textContent='数据生成于 '+D.generated+'。仅供参考，不构成投资建议。';
+renderAll();refresh();
+</script>
+</body>
+</html>
